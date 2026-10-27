@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import { signInWithPopup } from 'firebase/auth'
 import { auth, googleAuthProvider } from '../config/firebase.js'
 import { googleLogin, registerUser } from '../features/login.js'
+import { useDispatch } from 'react-redux'
+import { setUserData } from '../redux/userSlice.js'
 
 const Register = () => {
     const navigate = useNavigate();
@@ -16,17 +18,22 @@ const Register = () => {
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
 
+    const dispatch = useDispatch();
+
     const handleGoogleAuth = async () => {
         setIsGoogleLoading(true);
         setError(null);
         try {
             const data = await signInWithPopup(auth, googleAuthProvider);
             const token = await data.user.getIdToken();
-            await googleLogin(token);
+            const res = await googleLogin(token);
             setSuccess("Neural identity provisioned via Google Enclave!");
             setTimeout(() => {
                 navigate('/home');
             }, 600);
+
+            dispatch(setUserData(res))
+
         } catch (err) {
             console.error("Google registration failed:", err);
             setError(err.response?.data?.message || err.message || "Failed to register with Google");
@@ -67,14 +74,21 @@ const Register = () => {
 
         setIsLoading(true);
         try {
-            await registerUser(name.trim(), email.trim(), password);
+            const data = await registerUser(name.trim(), email.trim(), password);
             setSuccess("Identity initialized! Initializing workspace...");
             setTimeout(() => {
                 navigate('/home');
             }, 600);
+
+            dispatch(setUserData(data));
+            
         } catch (err) {
             console.error("Registration error:", err);
-            setError(err.response?.data?.message || err.message || "Registration failed. Please check your details.");
+            if (err.response?.status === 409) {
+                setError("An account with this email already exists. Please sign in instead.");
+            } else {
+                setError(err.response?.data?.message || err.message || "Registration failed. Please check your details.");
+            }
         } finally {
             setIsLoading(false);
         }
@@ -145,7 +159,14 @@ const Register = () => {
                                     <line x1="12" y1="8" x2="12" y2="12"></line>
                                     <line x1="12" y1="16" x2="12.01" y2="16"></line>
                                 </svg>
-                                <span className="flex-1">{error}</span>
+                                <span className="flex-1">
+                                    {error}{' '}
+                                    {error.includes("already exists") && (
+                                        <Link to="/login" className="underline font-semibold text-[#38bdf8] hover:text-[#7dd3fc] ml-1">
+                                            Sign in here
+                                        </Link>
+                                    )}
+                                </span>
                             </div>
                         )}
 
