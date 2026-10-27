@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import { signInWithPopup } from 'firebase/auth'
 import { auth, googleAuthProvider } from '../config/firebase.js'
 import { googleLogin, emailLogin } from '../features/login.js'
+import { useDispatch } from 'react-redux'
+import { setUserData } from '../redux/userSlice.js'
 
 const Login = () => {
     const navigate = useNavigate();
@@ -14,17 +16,24 @@ const Login = () => {
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
 
+
+    const dispatch = useDispatch()
+
     const handleGoogleAuth = async () => {
         setIsGoogleLoading(true);
         setError(null);
         try {
             const data = await signInWithPopup(auth, googleAuthProvider);
             const token = await data.user.getIdToken();
-            await googleLogin(token);
-            setSuccess("Neural session verified via Google!");
+            const res = await googleLogin(token);
+            setSuccess("Session authenticated! Launching workspace...");
             setTimeout(() => {
                 navigate('/home');
             }, 600);
+
+            // setting the data i.e. payload
+            dispatch(setUserData(res))
+
         } catch (err) {
             console.error("Google login failed:", err);
             setError(err.response?.data?.message || err.message || "Failed to authenticate with Google");
@@ -45,12 +54,15 @@ const Login = () => {
 
         setIsLoading(true);
         try {
-            await emailLogin(email.trim(), password);
+            const data = await emailLogin(email.trim(), password);
             setSuccess("Session authenticated! Launching workspace...");
 
             setTimeout(() => {
                 navigate('/home');
             }, 600);
+
+            dispatch(setUserData(data));
+
         } catch (err) {
             console.error("Authentication error:", err);
             setError(err.response?.data?.message || err.message || "Authentication failed. Check your credentials.");
@@ -59,6 +71,8 @@ const Login = () => {
         }
     };
 
+
+    
     return (
         <div className="relative min-h-screen w-full bg-[#07090e] text-slate-100 flex flex-col justify-between items-center selection:bg-cyan-500/30 selection:text-cyan-200 overflow-x-hidden px-4 sm:px-6 py-5">
             
