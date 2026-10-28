@@ -7,8 +7,14 @@ const userSlice = createSlice({
     },
     reducers: {
         setUserData: (state, action) => {
-            // from action's payload we took the data and put in state
-            state.userData = action.payload
+            if (action.payload && action.payload.user) {
+                state.userData = action.payload.user;
+            } else {
+                state.userData = action.payload;
+            }
+        },
+        clearUserData: (state) => {
+            state.userData = null;
         }
     }
 
@@ -16,5 +22,5 @@ const userSlice = createSlice({
 
 
 // this is redux syntax
-export const { setUserData } = userSlice.actions
+export const { setUserData, clearUserData } = userSlice.actions
 export default userSlice.reducer

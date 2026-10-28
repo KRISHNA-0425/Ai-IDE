@@ -12,19 +12,20 @@ export const isAuth = async (req, res, next) => {
         const result = await redis.get(`session-${sessionId}`)
 
         if (!result) {
-            return res.status(400).json({ message: "session not found" })
+            return res.status(401).json({ message: "session not found" });
         }
 
         // converting into json
-        const data = JSON.parse(res);
+        const data = JSON.parse(result);
 
         // setting the user data into user in the req object 
         // so whenever we will be needing the data we can directly get from the middleware 
         req.user = data;
 
-        return res.status()
+        next();
 
     } catch (error) {
-        return res.status(500).json({ message: "error in the isAuth middleware" })
+        console.error("isAuth middleware error:", error);
+        return res.status(500).json({ message: "error in the isAuth middleware" });
     }
 }

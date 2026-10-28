@@ -57,6 +57,7 @@ export const googleLogin = async (req, res) => {
     await redis.set(
       `session-${session}`,
       JSON.stringify({
+        _id: user._id.toString(),
         userId: user._id.toString(),
         name: user.name,
         email: user.email,
@@ -160,6 +161,7 @@ export const register = async (req, res) => {
     await redis.set(
       `session-${session}`,
       JSON.stringify({
+        _id: user._id.toString(),
         userId: user._id.toString(),
         name: user.name,
         email: user.email,
@@ -190,8 +192,13 @@ export const register = async (req, res) => {
     console.error("Registration error:", error);
 
     if (error.code === 11000) {
+      if (error.keyPattern?.email) {
+        return res.status(409).json({
+          message: "An account already exists with this email",
+        });
+      }
       return res.status(409).json({
-        message: "User already exists",
+        message: `Duplicate field error on ${Object.keys(error.keyPattern || {}).join(", ")}`,
       });
     }
 
@@ -245,6 +252,7 @@ export const login = async (req, res) => {
     await redis.set(
       `session-${session}`,
       JSON.stringify({
+        _id: user._id.toString(),
         userId: user._id.toString(),
         name: user.name,
         email: user.email,
@@ -284,7 +292,9 @@ export const login = async (req, res) => {
 // Logout
 export const logout = async (req, res) => {
   try {
-    const session = req.cookies?.session;
+    const rawCookie = req.headers.cookie || "";
+    const sessionMatch = rawCookie.split(";").map(c => c.trim()).find(c => c.startsWith("session="));
+    const session = req.cookies?.session || (sessionMatch ? sessionMatch.split("=")[1] : null);
 
     if (session) {
       // Delete the session from Redis

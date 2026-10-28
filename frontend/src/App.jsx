@@ -1,17 +1,56 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login.jsx'
 import Register from './pages/Register.jsx'
 import Homepage from './pages/Homepage.jsx'
 
+import { currentUser } from './features/currentUser'
+import { useDispatch, useSelector } from 'react-redux'
+import { setUserData, clearUserData } from './redux/userSlice.js'
+
 const App = () => {
+  const dispatch = useDispatch()
+  const { userData } = useSelector((state) => state.user)
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true)
+
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      try {
+        const data = await currentUser()
+        if (data) {
+          dispatch(setUserData(data))
+        } else {
+          dispatch(clearUserData())
+        }
+      } catch (error) {
+        console.error("Failed to fetch current user:", error)
+        dispatch(clearUserData())
+      } finally {
+        setIsCheckingAuth(false)
+      }
+    }
+
+    fetchCurrentUser()
+  }, [dispatch])
+
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen w-full bg-[#07090e] flex items-center justify-center text-slate-400 font-sans">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin"></div>
+          <span className="text-xs font-mono tracking-widest uppercase text-slate-500">Checking Session...</span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/" element={<Login />} />
-      <Route path="/home" element={<Homepage />} />
-      <Route path="*" element={<Navigate to="/login" replace />} />
+      <Route path="/" element={userData ? <Navigate to="/home" replace /> : <Navigate to="/login" replace />} />
+      <Route path="/login" element={userData ? <Navigate to="/home" replace /> : <Login />} />
+      <Route path="/register" element={userData ? <Navigate to="/home" replace /> : <Register />} />
+      <Route path="/home" element={userData ? <Homepage /> : <Navigate to="/login" replace />} />
+      <Route path="*" element={<Navigate to={userData ? "/home" : "/login"} replace />} />
     </Routes>
   )
 }
