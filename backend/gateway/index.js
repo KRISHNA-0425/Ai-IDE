@@ -6,6 +6,7 @@ import morgan from 'morgan'
 import proxy from 'express-http-proxy'
 import { isAuth } from './middleware/isAuth.js'
 import { currentUser } from './controllers/user.controller.js'
+import { proxyReqOptDecorator } from './utils/proxyHeader.js'
 dotenv.config();
 
 
@@ -13,7 +14,7 @@ dotenv.config();
 const port = process.env.PORT || 3000;
 const frontendURL = process.env.FRONTEND_URL || 'http://localhost:5173';
 const authService = process.env.AUTH_SERVICE || 'http://localhost:8001';
-
+const projectService = process.env.PROJECT_SERVICE || 'http://localhost:8002';
 const app = express();
 
 // middlewares
@@ -25,11 +26,21 @@ app.use(cors({
 app.use(cookieParser());
 app.use(morgan('dev')); // creates logs of the requests
 
+// Services
+
 // Proxy auth requests with preserved path
 app.use('/api/auth', proxy(authService, {
     proxyReqPathResolver: (req) => {
         return `/api/auth${req.url}`;
     }
+}));
+
+// Proxy project requests with preserved path
+app.use('/api/project', isAuth, proxy(projectService, {
+    proxyReqPathResolver: (req) => {
+        return `/api/project${req.url}`;
+    },
+    proxyReqOptDecorator,
 }));
 
 // isAuth middlware
