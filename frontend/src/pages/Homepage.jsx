@@ -1,120 +1,324 @@
-import React, { useState } from 'react'
-import { useSelector, useDispatch } from 'react-redux'
-import { useNavigate } from 'react-router-dom'
-import { clearUserData } from '../redux/userSlice.js'
-import { logoutUser } from '../features/login.js'
+import React, { useState, useEffect, useMemo } from 'react'
+import { useSelector } from 'react-redux'
+import { motion, AnimatePresence } from 'framer-motion'
+import Sidebar from '../components/Sidebar.jsx'
+import TopBar from '../components/TopBar.jsx'
+import ProjectCard from '../components/ProjectCard.jsx'
+import NewProjectModal from '../components/NewProjectModal.jsx'
+import EmptyState from '../components/EmptyState.jsx'
+import { getAllProject, toggleLike } from '../features/project.js'
 
 const Homepage = () => {
     const { userData } = useSelector((state) => state.user)
-    const dispatch = useDispatch()
-    const navigate = useNavigate()
-    const [isLoggingOut, setIsLoggingOut] = useState(false)
+    const [projects, setProjects] = useState([])
+    const [isLoading, setIsLoading] = useState(true)
+    const [searchQuery, setSearchQuery] = useState('')
+    const [activeTab, setActiveTab] = useState('projects') // 'projects' | 'starred'
+    const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false)
 
-    const handleLogout = async () => {
-        setIsLoggingOut(true)
+    // Local theme management: get & set from localStorage
+    const [theme, setTheme] = useState(() => {
         try {
-            await logoutUser()
-        } catch (error) {
-            console.error("Logout request failed:", error)
-        } finally {
-            dispatch(clearUserData())
-            setIsLoggingOut(false)
-            navigate('/login')
+            return localStorage.getItem('theme') || 'dark'
+        } catch {
+            return 'dark'
+        }
+    })
+
+    const toggleTheme = () => {
+        setTheme((prev) => {
+            const next = prev === 'dark' ? 'light' : 'dark'
+            try {
+                localStorage.setItem('theme', next)
+            } catch (err) {
+                console.error("Failed to save theme in localStorage:", err)
+            }
+            return next
+        })
+    }
+
+    const isDark = theme === 'dark'
+
+    // Extract first name for the welcome banner
+    const firstName = useMemo(() => {
+        if (!userData?.name) return 'Explorer'
+        return userData.name.trim().split(' ')[0]
+    }, [userData])
+
+    // Fetch user's real projects on mount
+    useEffect(() => {
+        const fetchProjects = async () => {
+            setIsLoading(true)
+            try {
+                const data = await getAllProject()
+                if (Array.isArray(data)) {
+                    setProjects(data)
+                }
+            } catch (err) {
+                console.error("Failed to fetch projects:", err)
+            } finally {
+                setIsLoading(false)
+            }
+        }
+        fetchProjects()
+    }, [])
+
+    // Handle toggle like/star
+    const handleToggleLike = async (projectId) => {
+        try {
+            const updated = await toggleLike(projectId)
+            if (updated && updated._id) {
+                setProjects((prev) =>
+                    prev.map((p) => (p._id === updated._id ? updated : p))
+                )
+            } else {
+                setProjects((prev) =>
+                    prev.map((p) => (p._id === projectId ? { ...p, liked: !p.liked } : p))
+                )
+            }
+        } catch (err) {
+            console.error("Failed to toggle star:", err)
         }
     }
 
-    const userName = userData?.name || 'Explorer'
-    const userEmail = userData?.email || 'Authenticated User'
-    const userAvatar = userData?.avatar || ''
+    // Handle new project creation
+    const handleProjectCreated = (newProject) => {
+        if (newProject) {
+            setProjects((prev) => [newProject, ...prev])
+        }
+    }
+
+    // Filter projects based on search query
+    const filteredProjects = useMemo(() => {
+        if (!searchQuery.trim()) return projects
+        const q = searchQuery.toLowerCase()
+        return projects.filter((p) => {
+            const nameMatch = p.name?.toLowerCase().includes(q)
+            const descMatch = p.description?.toLowerCase().includes(q)
+            const tagsMatch = Array.isArray(p.tags) && p.tags.some((t) => t.toLowerCase().includes(q))
+            return nameMatch || descMatch || tagsMatch
+        })
+    }, [projects, searchQuery])
+
+    // Starred vs regular projects
+    const starredProjects = useMemo(() => {
+        return filteredProjects.filter((p) => Boolean(p.liked))
+    }, [filteredProjects])
+
+    const regularProjects = useMemo(() => {
+        return filteredProjects.filter((p) => !p.liked)
+    }, [filteredProjects])
+
+    // Overall total counts (unfiltered by search for sidebar badges)
+    const totalProjectsCount = projects.length
+    const starredProjectsCount = useMemo(() => {
+        return projects.filter((p) => Boolean(p.liked)).length
+    }, [projects])
+
+    // Determine if empty state should be shown for the current tab
+    const showEmptyState = activeTab === 'starred'
+        ? starredProjects.length === 0
+        : filteredProjects.length === 0
 
     return (
-        <div className="relative min-h-screen w-full bg-[#07090e] text-slate-100 flex flex-col justify-between selection:bg-cyan-500/30 selection:text-cyan-200">
-            {/* Ambient Lighting */}
-            <div 
-                className="pointer-events-none fixed inset-0 z-0"
-                style={{
-                    background: 'radial-gradient(ellipse 65% 55% at 50% 30%, rgba(22, 40, 72, 0.4) 0%, rgba(12, 18, 30, 0.25) 45%, rgba(7, 9, 14, 0.98) 75%)'
-                }}
+        <div className={`flex h-screen w-full overflow-hidden font-sans transition-colors duration-200 ${
+            isDark 
+                ? 'bg-[#07090e] text-slate-100 selection:bg-cyan-500/30 selection:text-cyan-200' 
+                : 'bg-[#f8fafc] text-slate-900 selection:bg-indigo-100 selection:text-indigo-900'
+        }`}>
+            {/* Left Sidebar */}
+            <Sidebar
+                user={userData}
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+                totalProjectsCount={totalProjectsCount}
+                starredProjectsCount={starredProjectsCount}
+                theme={theme}
             />
-
-            {/* Subtle tech grid */}
-            <div 
-                className="pointer-events-none fixed inset-0 z-0 opacity-[0.03]"
-                style={{
-                    backgroundImage: 'linear-gradient(to right, #ffffff 1px, transparent 1px), linear-gradient(to bottom, #ffffff 1px, transparent 1px)',
-                    backgroundSize: '48px 48px'
-                }}
-            />
-
-            {/* Top Navigation Bar */}
-            <header className="relative z-10 w-full border-b border-white/[0.06] bg-[#0c0f17]/80 backdrop-blur-xl px-6 py-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <img 
-                        src="/bhasha-logo-white.png" 
-                        alt="BHASHA" 
-                        className="h-5 object-contain" 
-                    />
-                    <div className="h-3 w-px bg-slate-800"></div>
-                    <span className="text-[10px] font-mono tracking-widest text-slate-500 uppercase">
-                        AI—WORKSPACE
-                    </span>
-                </div>
-
-                <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-3 bg-[#131722] border border-white/[0.08] rounded-full px-3 py-1.5">
-                        {userAvatar ? (
-                            <img src={userAvatar} alt={userName} className="w-6 h-6 rounded-full object-cover" />
-                        ) : (
-                            <div className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-300 font-mono text-xs flex items-center justify-center font-semibold">
-                                {userName.charAt(0).toUpperCase()}
-                            </div>
-                        )}
-                        <span className="text-xs font-medium text-slate-200">{userName}</span>
-                    </div>
-
-                    <button
-                        onClick={handleLogout}
-                        disabled={isLoggingOut}
-                        className="bg-red-950/30 hover:bg-red-950/60 active:bg-red-950/80 text-red-300 border border-red-500/30 hover:border-red-500/50 rounded-xl px-3.5 py-1.5 text-xs font-medium transition-all duration-200 cursor-pointer disabled:opacity-50"
-                    >
-                        {isLoggingOut ? 'Logging out...' : 'Sign Out'}
-                    </button>
-                </div>
-            </header>
 
             {/* Main Content Area */}
-            <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 py-12">
-                <div className="w-full max-w-xl bg-[#10131b]/95 border border-white/[0.08] rounded-2xl p-8 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl text-center">
-                    
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/40 border border-emerald-500/30 text-emerald-400 text-xs font-mono mb-6">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                        SESSION ACTIVE & STORED
+            <div className="flex-1 flex flex-col h-screen overflow-y-auto overflow-x-hidden relative">
+                {/* Ambient Cyber Lighting / Radial Glow */}
+                <div 
+                    className="pointer-events-none fixed inset-0 z-0 transition-opacity duration-300"
+                    style={{
+                        opacity: isDark ? 0.45 : 0.35,
+                        background: isDark
+                            ? 'radial-gradient(ellipse 65% 55% at 50% 20%, rgba(22, 40, 72, 0.45) 0%, rgba(12, 18, 30, 0.3) 40%, rgba(7, 9, 14, 0.98) 75%)'
+                            : 'radial-gradient(ellipse 65% 55% at 50% 15%, rgba(226, 232, 240, 0.7) 0%, rgba(241, 245, 249, 0.3) 50%, transparent 80%)'
+                    }}
+                />
+
+                {/* Subtle tech grid */}
+                <div 
+                    className="pointer-events-none fixed inset-0 z-0 opacity-[0.03]"
+                    style={{
+                        backgroundImage: isDark
+                            ? 'linear-gradient(to right, #ffffff 1px, transparent 1px), linear-gradient(to bottom, #ffffff 1px, transparent 1px)'
+                            : 'linear-gradient(to right, #000000 1px, transparent 1px), linear-gradient(to bottom, #000000 1px, transparent 1px)',
+                        backgroundSize: '48px 48px'
+                    }}
+                />
+
+                {/* Top Bar with Search, Theme Toggle, & New Project Action */}
+                <TopBar
+                    searchQuery={searchQuery}
+                    setSearchQuery={setSearchQuery}
+                    onOpenNewProject={() => setIsNewProjectModalOpen(true)}
+                    theme={theme}
+                    toggleTheme={toggleTheme}
+                />
+
+                {/* Dashboard Scrollable Body */}
+                <main className="relative z-10 flex-1 px-8 sm:px-10 py-8 max-w-7xl w-full mx-auto space-y-10">
+                    {/* Welcome Back Hero */}
+                    <div className="flex items-center justify-between">
+                        <h1 className={`text-2xl sm:text-3xl font-semibold tracking-tight ${
+                            isDark ? 'text-white' : 'text-slate-900'
+                        }`}>
+                            Welcome Back, <span>{firstName}</span>
+                        </h1>
                     </div>
 
-                    <h1 className="text-3xl font-bold tracking-tight text-white mb-2">
-                        Welcome back, <span className="text-cyan-400">{userName}</span>
-                    </h1>
-                    <p className="text-sm text-slate-400 mb-8 font-mono">
-                        {userEmail}
-                    </p>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left">
-                        <div className="bg-[#0c0f17] border border-white/[0.06] rounded-xl p-4">
-                            <span className="text-[11px] font-mono uppercase text-slate-500 block mb-1">User Identifier</span>
-                            <span className="text-xs font-mono text-slate-300 break-all">{userData?._id || userData?.userId || 'N/A'}</span>
+                    {/* Loading Skeleton */}
+                    {isLoading ? (
+                        <div className="space-y-8 animate-pulse">
+                            <div>
+                                <div className={`h-5 w-44 rounded-lg mb-4 ${isDark ? 'bg-white/[0.06]' : 'bg-slate-200'}`} />
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                                    {[1, 2, 3].map((i) => (
+                                        <div key={i} className={`h-48 rounded-2xl border ${
+                                            isDark ? 'bg-[#10131c] border-white/[0.06]' : 'bg-white border-slate-200 shadow-xs'
+                                        }`} />
+                                    ))}
+                                </div>
+                            </div>
                         </div>
-                        <div className="bg-[#0c0f17] border border-white/[0.06] rounded-xl p-4">
-                            <span className="text-[11px] font-mono uppercase text-slate-500 block mb-1">Session Source</span>
-                            <span className="text-xs font-mono text-cyan-300">Redis Secure Cookie</span>
-                        </div>
-                    </div>
-                </div>
-            </main>
+                    ) : showEmptyState ? (
+                        /* Empty State */
+                        <EmptyState
+                            type={activeTab}
+                            searchQuery={searchQuery}
+                            onOpenNewProject={() => setIsNewProjectModalOpen(true)}
+                            theme={theme}
+                        />
+                    ) : (
+                        <>
+                            {/* Starred Projects Section */}
+                            {(activeTab === 'projects' || activeTab === 'starred') && starredProjects.length > 0 && (
+                                <section className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2.5">
+                                            <h2 className={`text-sm sm:text-base font-semibold tracking-tight ${
+                                                isDark ? 'text-slate-100' : 'text-slate-900'
+                                            }`}>
+                                                Starred Projects
+                                            </h2>
+                                            <span className={`text-xs sm:text-sm font-mono font-medium ${
+                                                isDark ? 'text-slate-400' : 'text-slate-500'
+                                            }`}>
+                                                ({starredProjects.length})
+                                            </span>
+                                        </div>
 
-            {/* Bottom Footer */}
-            <footer className="relative z-10 w-full py-4 text-center text-xs text-slate-600 font-mono">
-                BHASHA AI STUDIO • ALL SYSTEMS OPERATIONAL
-            </footer>
+                                        <button 
+                                            onClick={() => setActiveTab(activeTab === 'starred' ? 'projects' : 'starred')}
+                                            className={`text-xs sm:text-sm font-medium transition-colors cursor-pointer ${
+                                                isDark ? 'text-slate-400 hover:text-cyan-400' : 'text-slate-500 hover:text-slate-900'
+                                            }`}
+                                        >
+                                            {activeTab === 'starred' ? 'Show all' : 'View all'}
+                                        </button>
+                                    </div>
+
+                                    {/* Starred Grid */}
+                                    <motion.div 
+                                        layout
+                                        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
+                                    >
+                                        <AnimatePresence>
+                                            {starredProjects.map((project) => (
+                                                <ProjectCard
+                                                    key={project._id || project.id}
+                                                    project={project}
+                                                    onToggleLike={handleToggleLike}
+                                                    theme={theme}
+                                                />
+                                            ))}
+                                        </AnimatePresence>
+                                    </motion.div>
+                                </section>
+                            )}
+
+                            {/* Regular Projects Section (Shown if activeTab is 'projects') */}
+                            {activeTab === 'projects' && (
+                                <section className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2.5">
+                                            <h2 className={`text-sm sm:text-base font-semibold tracking-tight ${
+                                                isDark ? 'text-slate-100' : 'text-slate-900'
+                                            }`}>
+                                                Projects
+                                            </h2>
+                                            <span className={`text-xs sm:text-sm font-mono font-medium ${
+                                                isDark ? 'text-slate-400' : 'text-slate-500'
+                                            }`}>
+                                                ({regularProjects.length})
+                                            </span>
+                                        </div>
+
+                                        {regularProjects.length > 0 && (
+                                            <button 
+                                                onClick={() => setActiveTab('projects')}
+                                                className={`text-xs sm:text-sm font-medium transition-colors cursor-pointer ${
+                                                    isDark ? 'text-slate-400 hover:text-cyan-400' : 'text-slate-500 hover:text-slate-900'
+                                                }`}
+                                            >
+                                                View all
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {regularProjects.length === 0 && starredProjects.length > 0 ? (
+                                        <div className={`p-7 text-center text-xs sm:text-sm border rounded-2xl font-mono ${
+                                            isDark 
+                                                ? 'text-slate-400 border-white/[0.06] bg-[#10131c]/40' 
+                                                : 'text-slate-500 border-slate-200 bg-white/60'
+                                        }`}>
+                                            All current projects are marked as Starred.
+                                        </div>
+                                    ) : (
+                                        /* Projects Grid */
+                                        <motion.div 
+                                            layout
+                                            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
+                                        >
+                                            <AnimatePresence>
+                                                {regularProjects.map((project) => (
+                                                    <ProjectCard
+                                                        key={project._id || project.id}
+                                                        project={project}
+                                                        onToggleLike={handleToggleLike}
+                                                        theme={theme}
+                                                    />
+                                                ))}
+                                            </AnimatePresence>
+                                        </motion.div>
+                                    )}
+                                </section>
+                            )}
+                        </>
+                    )}
+                </main>
+            </div>
+
+            {/* Modal for Creating New Project */}
+            <NewProjectModal
+                isOpen={isNewProjectModalOpen}
+                onClose={() => setIsNewProjectModalOpen(false)}
+                onProjectCreated={handleProjectCreated}
+                theme={theme}
+            />
         </div>
     )
 }
