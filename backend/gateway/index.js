@@ -15,6 +15,7 @@ const port = process.env.PORT || 3000;
 const frontendURL = process.env.FRONTEND_URL || 'http://localhost:5173';
 const authService = process.env.AUTH_SERVICE || 'http://localhost:8001';
 const projectService = process.env.PROJECT_SERVICE || 'http://localhost:8002';
+const managementService = process.env.MANAGEMENT_SERVICE || 'http://localhost:8003';
 const app = express();
 
 // middlewares
@@ -39,6 +40,14 @@ app.use('/api/auth', proxy(authService, {
 app.use('/api/project', isAuth, proxy(projectService, {
     proxyReqPathResolver: (req) => {
         return `/api/project${req.url}`;
+    },
+    proxyReqOptDecorator,
+}));
+
+// Proxy management requests with preserved path
+app.use('/api/management', isAuth, proxy(managementService, {
+    proxyReqPathResolver: (req) => {
+        return `/api/management${req.url}`;
     },
     proxyReqOptDecorator,
 }));
