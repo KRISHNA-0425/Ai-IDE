@@ -8,6 +8,7 @@ import NotFound from './pages/NotFound.jsx'
 import { currentUser } from './features/currentUser'
 import { useDispatch, useSelector } from 'react-redux'
 import { setUserData, clearUserData } from './redux/userSlice.js'
+import Project from './pages/Project.jsx'
 
 const App = () => {
   const dispatch = useDispatch()
@@ -51,7 +52,8 @@ const App = () => {
       <Route path="/login" element={userData ? <Navigate to="/home" replace /> : <Login />} />
       <Route path="/register" element={userData ? <Navigate to="/home" replace /> : <Register />} />
       <Route path="/home" element={userData ? <Homepage /> : <Navigate to="/login" replace />} />
-      <Route path="*" element={<NotFound/>} />
+      <Route path='/project/:id' element={userData ? <Project /> : <Navigate to='/login' replace />} />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   )
 }
