@@ -1,10 +1,10 @@
 import React, { useState } from 'react'
 import { motion } from 'framer-motion'
 import { FaStar } from 'react-icons/fa'
-import { FiStar } from 'react-icons/fi'
+import { FiStar, FiTrash2 } from 'react-icons/fi'
 import { formatTimeAgo, getStatusDotColor } from '../utils/timeAgo.js'
 
-const ProjectCard = ({ project, onToggleLike, onClick, theme = 'dark' }) => {
+const ProjectCard = ({ project, onToggleLike, onDelete, onClick, theme = 'dark' }) => {
     const isDark = theme === 'dark'
     const [isLiking, setIsLiking] = useState(false)
     const dotColor = getStatusDotColor(project.name || project._id)
@@ -17,6 +17,13 @@ const ProjectCard = ({ project, onToggleLike, onClick, theme = 'dark' }) => {
             await onToggleLike(project._id)
         } finally {
             setIsLiking(false)
+        }
+    }
+
+    const handleDeleteClick = (e) => {
+        e.stopPropagation()
+        if (onDelete) {
+            onDelete(project)
         }
     }
 
@@ -71,26 +78,42 @@ const ProjectCard = ({ project, onToggleLike, onClick, theme = 'dark' }) => {
                         <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${dotColor}`} />
                         <h3 className={`text-sm sm:text-[15px] font-semibold transition-colors truncate tracking-tight ${
                             isDark
-                                ? 'text-slate-100 group-hover:text-cyan-300'
+                                ? 'text-slate-100 '
                                 : 'text-slate-900 group-hover:text-slate-700'
                         }`}>
                             {project.name}
                         </h3>
                     </div>
 
-                    <motion.button
-                        whileHover={{ scale: 1.15 }}
-                        whileTap={{ scale: 0.85 }}
-                        onClick={handleStarClick}
-                        className="text-slate-400 hover:text-amber-500 p-1.5 transition-colors cursor-pointer shrink-0"
-                        title={project.liked ? "Unstar project" : "Star project"}
-                    >
-                        {project.liked ? (
-                            <FaStar className="text-amber-400 text-sm drop-shadow-[0_0_8px_rgba(251,191,36,0.5)]" />
-                        ) : (
-                            <FiStar className="text-slate-400 hover:text-amber-500 text-sm" />
-                        )}
-                    </motion.button>
+                    <div className="flex items-center gap-1 shrink-0">
+                        <motion.button
+                            whileHover={{ scale: 1.15 }}
+                            whileTap={{ scale: 0.85 }}
+                            onClick={handleStarClick}
+                            className="text-slate-400 hover:text-amber-500 p-1.5 transition-colors cursor-pointer shrink-0"
+                            title={project.liked ? "Unstar project" : "Star project"}
+                        >
+                            {project.liked ? (
+                                <FaStar className="text-amber-400 text-sm drop-shadow-[0_0_8px_rgba(251,191,36,0.5)]" />
+                            ) : (
+                                <FiStar className="text-slate-400 hover:text-amber-500 text-sm" />
+                            )}
+                        </motion.button>
+
+                        <motion.button
+                            whileHover={{ scale: 1.15 }}
+                            whileTap={{ scale: 0.85 }}
+                            onClick={handleDeleteClick}
+                            className={`p-1.5 rounded-lg transition-all cursor-pointer shrink-0 opacity-70 group-hover:opacity-100 ${
+                                isDark
+                                    ? 'text-slate-400 hover:text-rose-400 hover:bg-rose-500/10'
+                                    : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+                            }`}
+                            title="Delete project"
+                        >
+                            <FiTrash2 className="text-sm" />
+                        </motion.button>
+                    </div>
                 </div>
 
                 {/* Project Description */}
