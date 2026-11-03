@@ -1,20 +1,26 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useSelector } from 'react-redux'
 import { motion, AnimatePresence } from 'framer-motion'
+import { ToastContainer, toast } from 'react-toastify'
 import Sidebar from '../components/Sidebar.jsx'
 import TopBar from '../components/TopBar.jsx'
 import ProjectCard from '../components/ProjectCard.jsx'
 import NewProjectModal from '../components/NewProjectModal.jsx'
+import DeleteConfirmationModal from '../components/DeleteConfirmationModal.jsx'
 import EmptyState from '../components/EmptyState.jsx'
-import { getAllProject, toggleLike } from '../features/project.js'
+import { getAllProject, toggleLike, deleteProject } from '../features/project.js'
 
 const Homepage = () => {
+    const navigate = useNavigate()
     const { userData } = useSelector((state) => state.user)
     const [projects, setProjects] = useState([])
     const [isLoading, setIsLoading] = useState(true)
     const [searchQuery, setSearchQuery] = useState('')
     const [activeTab, setActiveTab] = useState('projects') // 'projects' | 'starred'
     const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false)
+    const [projectToDelete, setProjectToDelete] = useState(null)
+    const [isDeleting, setIsDeleting] = useState(false)
 
     // Local theme management: get & set from localStorage
     const [theme, setTheme] = useState(() => {
@@ -85,6 +91,38 @@ const Homepage = () => {
     const handleProjectCreated = (newProject) => {
         if (newProject) {
             setProjects((prev) => [newProject, ...prev])
+            toast.success(`Project "${newProject.name}" created successfully!`)
+        }
+    }
+
+    // Open project in IDE workspace
+    const handleOpenProject = (project) => {
+        const id = project._id || project.id
+        if (id) {
+            navigate(`/project/${id}`)
+        }
+    }
+
+    // Initiate delete confirmation
+    const handleDeleteRequest = (project) => {
+        setProjectToDelete(project)
+    }
+
+    // Confirm delete execution
+    const handleDeleteConfirm = async () => {
+        if (!projectToDelete) return
+        const id = projectToDelete._id || projectToDelete.id
+        setIsDeleting(true)
+        try {
+            await deleteProject(id)
+            setProjects((prev) => prev.filter((p) => (p._id || p.id) !== id))
+            toast.success(`Project "${projectToDelete.name}" deleted successfully`)
+            setProjectToDelete(null)
+        } catch (err) {
+            console.error("Failed to delete project:", err)
+            toast.error(err.response?.data?.message || err.message || "Failed to delete project")
+        } finally {
+            setIsDeleting(false)
         }
     }
 
@@ -242,6 +280,8 @@ const Homepage = () => {
                                                     key={project._id || project.id}
                                                     project={project}
                                                     onToggleLike={handleToggleLike}
+                                                    onDelete={handleDeleteRequest}
+                                                    onClick={handleOpenProject}
                                                     theme={theme}
                                                 />
                                             ))}
@@ -299,6 +339,8 @@ const Homepage = () => {
                                                         key={project._id || project.id}
                                                         project={project}
                                                         onToggleLike={handleToggleLike}
+                                                        onDelete={handleDeleteRequest}
+                                                        onClick={handleOpenProject}
                                                         theme={theme}
                                                     />
                                                 ))}
@@ -318,6 +360,30 @@ const Homepage = () => {
                 onClose={() => setIsNewProjectModalOpen(false)}
                 onProjectCreated={handleProjectCreated}
                 theme={theme}
+            />
+
+            {/* Modal for Confirming Project Deletion */}
+            <DeleteConfirmationModal
+                isOpen={Boolean(projectToDelete)}
+                project={projectToDelete}
+                onClose={() => !isDeleting && setProjectToDelete(null)}
+                onConfirm={handleDeleteConfirm}
+                isLoading={isDeleting}
+                theme={theme}
+            />
+
+            {/* Bottom-right Toast Notifications */}
+            <ToastContainer
+                position="bottom-right"
+                autoClose={3000}
+                hideProgressBar={false}
+                newestOnTop
+                closeOnClick
+                rtl={false}
+                pauseOnFocusLoss
+                draggable
+                pauseOnHover
+                theme={isDark ? 'dark' : 'light'}
             />
         </div>
     )
