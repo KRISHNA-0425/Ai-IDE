@@ -37,7 +37,7 @@ const TopBar = ({ searchQuery, setSearchQuery, onOpenNewProject, theme = 'dark',
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Search projects, neural embeddings, memory hashes..."
+                        placeholder="Search projects..."
                         className={`w-full bg-transparent text-sm sm:text-[15px] outline-none font-sans ${
                             isDark
                                 ? 'text-slate-100 placeholder:text-slate-500'
@@ -56,11 +56,7 @@ const TopBar = ({ searchQuery, setSearchQuery, onOpenNewProject, theme = 'dark',
 
             {/* Right Status Dot, Theme Toggle & New Project Action */}
             <div className="flex items-center gap-3.5 ml-6">
-                {/* Active node indicator */}
-                <div className="flex items-center gap-2 mr-1">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.7)] animate-pulse" />
-                </div>
-
+               
                 {/* Theme Toggle Button (shifted here beside New Project) */}
                 <motion.button
                     whileHover={{ scale: 1.05 }}
