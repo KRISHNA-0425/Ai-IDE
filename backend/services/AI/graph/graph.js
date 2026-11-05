@@ -1,7 +1,8 @@
-import { HumanMessage } from "@langchain/core/messages"
+import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages"
 import { fileTools } from "./tools.js"
 import llm from '../utils/llm.js'
-import { StateGraph } from '@langchain/langgraph'
+import { MessagesAnnotation, StateGraph } from '@langchain/langgraph'
+import { ToolNode } from '@langchain/langgraph/prebuilt'
 
 const system_prompt = `
 You are an expert coding agent inside a Cursor-like IDE.
@@ -474,26 +475,70 @@ Return only:
 const maxMessage = 12 // setting top limit
 
 const getRecentMessages = (messages = []) => {
-    if (messages.length <= maxMessage) {
-        return messages
-    }
-    // checking if it is a human message?
-    const firstUserMessage = messages.find((message) => HumanMessage.isInstance(message))
+  if (messages.length <= maxMessage) {
+    return messages
+  }
+  // checking if it is a human message?
+  const firstUserMessage = messages.find((message) => HumanMessage.isInstance(message))
 
-    const recents = messages.slice(-maxMessage)
+  const recents = messages.slice(-maxMessage)
 
-    if (firstUserMessage && !recents.includes(firstUserMessage)) {
-        return [firstUserMessage, ...recent]
-    }
+  if (firstUserMessage && !recents.includes(firstUserMessage)) {
+    return [firstUserMessage, ...recents]
+  }
 
-    return recents
+  return recents
 
 }
 
 export const graph = ({ projectId, userId }) => {
-    const tools = fileTools({ projectId, userId })
+  const tools = fileTools({ projectId, userId })
 
-    const model = llm.bindTools(tools);
+  const model = llm.bindTools(tools);
 
-    return new StateGraph()
+  const agent = async (state) => {
+    const allMessages = state.messages || []
+    const recentMessages = getRecentMessages(allMessages)
+    const messages = [
+      new SystemMessage(system_prompt),
+      ...recentMessages
+    ]
+
+    const response = await model.invoke(messages)
+    console.log(response)
+
+    return {
+      messages:[
+        response
+      ]
+    }
+  }
+
+  const toolNode = new ToolNode(tools)
+
+  const shouldContinue = (state) => {
+    const lastMessage = state.messages?.at(-1);
+    // this condition checks if any tool is required by the ai 
+    // if yes then send to the tools node
+    // else simple end
+    if (
+      lastMessage &&
+      AIMessage.isInstance(lastMessage) &&
+      Array.isArray(lastMessage.tool_calls) &&
+      lastMessage.tool_calls.length > 0
+    ) {
+      return "tools";
+    }
+    return "__end__";
+  };
+
+  return new StateGraph(MessagesAnnotation)
+    // first node is from where 
+    // second is to where
+    .addNode("agent", agent)
+    .addNode("tools", toolNode)
+    .addEdge("__start__", "agent")
+    .addConditionalEdges("agent", shouldContinue)
+    .addEdge("tools", "agent")
+    .compile()
 }

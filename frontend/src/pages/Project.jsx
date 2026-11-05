@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { toast, ToastContainer } from 'react-toastify'
 import {
   VscFiles,
   VscSearch,
@@ -9,58 +10,99 @@ import {
   VscSettingsGear,
   VscPlay,
   VscArrowLeft,
-  VscSplitHorizontal,
   VscLayoutSidebarLeft,
-  VscLayoutSidebarRight
+  VscSync
 } from 'react-icons/vsc'
 import FileExplorer from '../components/editor/FileExplorer.jsx'
 import CodeEditor from '../components/editor/CodeEditor.jsx'
 import TerminalPanel from '../components/editor/TerminalPanel.jsx'
 import AIAgentPanel from '../components/editor/AIAgentPanel.jsx'
+import { getProjectById } from '../features/project.js'
+import {
+  getTree,
+  getFile,
+  createRootFolder,
+  createFolder,
+  createFile,
+  updateFile,
+  deleteFile,
+  deleteFolder
+} from '../features/management.js'
 
-// Default mock files for immediate interactive UI experience
-const initialMockTree = [
-  {
-    id: 'src-folder',
-    name: 'src',
-    type: 'folder',
-    children: [
-      {
-        id: 'app-jsx',
-        name: 'App.jsx',
-        type: 'file',
-        content: `import React, { useState } from 'react';\n\nfunction App() {\n  const [count, setCount] = useState(0);\n\n  return (\n    <div className="container">\n      <header className="header">\n        <h1>Welcome to AI-IDE ⚡</h1>\n        <p>Start coding with Monaco Editor, Terminal, & AI Assistant.</p>\n      </header>\n      <main>\n        <button onClick={() => setCount(count + 1)}>\n          Count is: {count}\n        </button>\n      </main>\n    </div>\n  );\n}\n\nexport default App;\n`
-      },
-      {
-        id: 'index-css',
-        name: 'index.css',
-        type: 'file',
-        content: `/* Global Workspace Styles */\nbody {\n  margin: 0;\n  padding: 0;\n  background-color: #0b0e14;\n  color: #f8fafc;\n  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n}\n\n.container {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  min-height: 100vh;\n}\n`
-      },
-      {
-        id: 'main-jsx',
-        name: 'main.jsx',
-        type: 'file',
-        content: `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App.jsx';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`
-      }
-    ]
-  },
-  {
-    id: 'package-json',
-    name: 'package.json',
-    type: 'file',
-    content: `{\n  "name": "ai-project-workspace",\n  "version": "1.0.0",\n  "type": "module",\n  "scripts": {\n    "dev": "vite",\n    "build": "vite build"\n  },\n  "dependencies": {\n    "react": "^19.0.0",\n    "react-dom": "^19.0.0"\n  }\n}\n`
-  },
-  {
-    id: 'readme-md',
-    name: 'README.md',
-    type: 'file',
-    content: `# AI Workspace Project\n\nThis project is configured with full Monaco editor capabilities, an interactive terminal, and pair programming AI Agent assistance.\n\n## Getting Started\n- Open any file from the explorer on the left.\n- Edit code with real-time syntax highlighting.\n- Use the AI Agent panel on the right to prompt or refactor.\n`
+/**
+ * Detect language based on file extension
+ */
+const detectLanguage = (fileName) => {
+  const ext = fileName?.split('.').pop()?.toLowerCase()
+  switch (ext) {
+    case 'jsx':
+    case 'js':
+    case 'mjs':
+    case 'cjs':
+      return 'javascript'
+    case 'ts':
+    case 'tsx':
+      return 'typescript'
+    case 'css':
+    case 'scss':
+      return 'css'
+    case 'html':
+    case 'htm':
+      return 'html'
+    case 'json':
+      return 'json'
+    case 'md':
+    case 'markdown':
+      return 'markdown'
+    case 'py':
+      return 'python'
+    case 'sql':
+      return 'sql'
+    case 'sh':
+    case 'bash':
+      return 'shell'
+    default:
+      return 'plainText'
   }
-]
+}
+
+/**
+ * Recursively find a node in the tree by ID
+ */
+const findNodeInTree = (nodes, targetId) => {
+  for (const node of nodes) {
+    const id = node._id || node.id
+    if (id === targetId) return node
+    if (node.children && node.children.length > 0) {
+      const found = findNodeInTree(node.children, targetId)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+/**
+ * Recursively find the first file in the tree
+ */
+const findFirstFile = (nodes) => {
+  for (const node of nodes) {
+    if (node.type === 'file') return node
+    if (node.children && node.children.length > 0) {
+      const found = findFirstFile(node.children)
+      if (found) return found
+    }
+  }
+  return null
+}
 
 const Project = () => {
   const { id: projectId } = useParams()
+
+  // Project details & tree states
+  const [project, setProject] = useState(null)
+  const [fileTree, setFileTree] = useState([])
+  const [isLoadingProject, setIsLoadingProject] = useState(true)
+  const [isLoadingTree, setIsLoadingTree] = useState(true)
 
   // Layout Toggle States
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
@@ -70,40 +112,323 @@ const Project = () => {
   const [activeActivityTab, setActiveActivityTab] = useState('explorer')
 
   // Editor and File States
-  const [fileTree, setFileTree] = useState(initialMockTree)
-  const [openTabs, setOpenTabs] = useState([
-    initialMockTree[0].children[0], // App.jsx
-    initialMockTree[0].children[1]  // index.css
-  ])
-  const [activeFile, setActiveFile] = useState(initialMockTree[0].children[0])
+  const [openTabs, setOpenTabs] = useState([])
+  const [activeFile, setActiveFile] = useState(null)
+  const [saveStatus, setSaveStatus] = useState('saved') // 'saved' | 'saving' | 'unsaved' | 'error'
 
-  // Select a file from explorer or tabs
-  const handleSelectFile = (file) => {
-    setActiveFile(file)
-    // Add to open tabs if not present
-    if (!openTabs.find((t) => t.id === file.id)) {
-      setOpenTabs((prev) => [...prev, file])
+  // Refs for debounced auto-save & manual save without closure staleness
+  const activeFileRef = useRef(activeFile)
+  activeFileRef.current = activeFile
+  const saveTimeoutRef = useRef(null)
+
+  // Determine root folder (folder with parentId === null)
+  const rootFolder = useMemo(() => {
+    return fileTree.find((n) => n.type === 'folder' && !n.parentId) || fileTree[0] || null
+  }, [fileTree])
+
+  const rootFolderId = rootFolder ? rootFolder._id || rootFolder.id : null
+
+  // 1. Initial Load: Fetch Project & Workspace File Tree
+  useEffect(() => {
+    if (!projectId) return
+
+    let isMounted = true
+
+    const loadWorkspace = async () => {
+      setIsLoadingProject(true)
+      setIsLoadingTree(true)
+
+      try {
+        // Fetch project metadata
+        const projData = await getProjectById(projectId)
+        if (isMounted) {
+          setProject(projData)
+        }
+
+        // Fetch file tree
+        let tree = await getTree(projectId)
+
+        // If workspace has no tree or root folder, initialize root folder automatically
+        if (!tree || tree.length === 0) {
+          try {
+            await createRootFolder({
+              projectId,
+              projectName: projData?.name || 'workspace'
+            })
+            tree = await getTree(projectId)
+          } catch (createErr) {
+            console.error("Auto-creation of root folder failed:", createErr)
+          }
+        }
+
+        if (isMounted) {
+          const validTree = Array.isArray(tree) ? tree : []
+          setFileTree(validTree)
+
+          // Select first file if available and no file is active
+          const firstFile = findFirstFile(validTree)
+          if (firstFile) {
+            selectFileWithContent(firstFile)
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load project workspace:", err)
+        toast.error("Failed to load workspace data")
+      } finally {
+        if (isMounted) {
+          setIsLoadingProject(false)
+          setIsLoadingTree(false)
+        }
+      }
     }
+
+    loadWorkspace()
+
+    return () => {
+      isMounted = false
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+      }
+    }
+  }, [projectId])
+
+  // 2. Select file: fetch full content if missing
+  const selectFileWithContent = async (fileNode) => {
+    const fileId = fileNode._id || fileNode.id
+    let fullFile = fileNode
+
+    if (fullFile.content === undefined || fullFile.content === null) {
+      try {
+        const data = await getFile(fileId)
+        fullFile = { ...fileNode, ...data }
+      } catch (err) {
+        console.error("Failed to fetch full file content:", err)
+        fullFile = { ...fileNode, content: '' }
+      }
+    }
+
+    setActiveFile(fullFile)
+
+    // Add or update in open tabs
+    setOpenTabs((prev) => {
+      const exists = prev.some((tab) => (tab._id || tab.id) === fileId)
+      if (exists) {
+        return prev.map((tab) => ((tab._id || tab.id) === fileId ? fullFile : tab))
+      }
+      return [...prev, fullFile]
+    })
   }
 
-  // Close tab
+  // 3. Close Tab
   const handleCloseTab = (tabToClose) => {
-    const remaining = openTabs.filter((t) => t.id !== tabToClose.id)
+    const targetId = tabToClose._id || tabToClose.id
+    const remaining = openTabs.filter((t) => (t._id || t.id) !== targetId)
     setOpenTabs(remaining)
 
-    if (activeFile?.id === tabToClose.id) {
+    if (activeFile && (activeFile._id || activeFile.id) === targetId) {
       setActiveFile(remaining.length > 0 ? remaining[remaining.length - 1] : null)
     }
   }
 
-  // Handle active code edit
+  // 4. Save logic: updates file on backend
+  const performSave = async (fileId, contentToSave) => {
+    if (!fileId) return
+    setSaveStatus('saving')
+    try {
+      await updateFile(fileId, { content: contentToSave })
+      setSaveStatus('saved')
+    } catch (err) {
+      console.error("Auto-save failed:", err)
+      setSaveStatus('error')
+      toast.error("Failed to save changes")
+    }
+  }
+
+  // 5. Code change in Monaco Editor: instant local state + debounced auto-save
   const handleCodeChange = (newCode) => {
     if (!activeFile) return
-    setActiveFile((prev) => ({ ...prev, content: newCode }))
+
+    const currentId = activeFile._id || activeFile.id
+    const updated = { ...activeFile, content: newCode }
+
+    setActiveFile(updated)
+    setOpenTabs((prev) =>
+      prev.map((t) => ((t._id || t.id) === currentId ? updated : t))
+    )
+
+    setSaveStatus('unsaved')
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+    }
+
+    saveTimeoutRef.current = setTimeout(() => {
+      performSave(currentId, newCode)
+    }, 1000)
+  }
+
+  // 6. Global keyboard shortcut: Ctrl+S / Cmd+S for immediate save
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        if (activeFileRef.current) {
+          if (saveTimeoutRef.current) {
+            clearTimeout(saveTimeoutRef.current)
+          }
+          performSave(
+            activeFileRef.current._id || activeFileRef.current.id,
+            activeFileRef.current.content || ''
+          )
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  // 7. Create File Handler
+  const handleCreateFile = async ({ parentId, name }) => {
+    if (!name || !name.trim()) return
+
+    const targetParentId = parentId || rootFolderId
+    if (!targetParentId) {
+      toast.error("Cannot create file: no folder available")
+      return
+    }
+
+    try {
+      const language = detectLanguage(name)
+      const newFile = await createFile({
+        projectId,
+        parentId: targetParentId,
+        name: name.trim(),
+        content: '',
+        language
+      })
+
+      toast.success(`Created file "${name}"`)
+
+      // Refresh tree
+      const updatedTree = await getTree(projectId)
+      setFileTree(Array.isArray(updatedTree) ? updatedTree : [])
+
+      // Automatically open the new file in editor
+      await selectFileWithContent(newFile)
+    } catch (err) {
+      console.error("Error creating file:", err)
+      toast.error(err.response?.data?.message || "Failed to create file")
+    }
+  }
+
+  // 8. Create Folder Handler
+  const handleCreateFolder = async ({ parentId, name }) => {
+    if (!name || !name.trim()) return
+
+    const targetParentId = parentId || rootFolderId
+    if (!targetParentId) {
+      toast.error("Cannot create folder: no parent folder available")
+      return
+    }
+
+    try {
+      await createFolder({
+        projectId,
+        parentId: targetParentId,
+        name: name.trim()
+      })
+
+      toast.success(`Created folder "${name}"`)
+
+      // Refresh tree
+      const updatedTree = await getTree(projectId)
+      setFileTree(Array.isArray(updatedTree) ? updatedTree : [])
+    } catch (err) {
+      console.error("Error creating folder:", err)
+      toast.error(err.response?.data?.message || "Failed to create folder")
+    }
+  }
+
+  // 9. Delete File Handler
+  const handleDeleteFile = async (fileId) => {
+    try {
+      await deleteFile(fileId)
+      toast.success("File deleted successfully")
+
+      // Close tab if open
+      setOpenTabs((prev) => {
+        const remaining = prev.filter((t) => (t._id || t.id) !== fileId)
+        if (activeFile && (activeFile._id || activeFile.id) === fileId) {
+          setActiveFile(remaining.length > 0 ? remaining[remaining.length - 1] : null)
+        }
+        return remaining
+      })
+
+      // Refresh tree
+      const updatedTree = await getTree(projectId)
+      setFileTree(Array.isArray(updatedTree) ? updatedTree : [])
+    } catch (err) {
+      console.error("Error deleting file:", err)
+      toast.error(err.response?.data?.message || "Failed to delete file")
+    }
+  }
+
+  // 10. Delete Folder Handler
+  const handleDeleteFolder = async (folderId) => {
+    try {
+      await deleteFolder(folderId)
+      toast.success("Folder deleted successfully")
+
+      // Refresh tree
+      const updatedTree = await getTree(projectId)
+      const validTree = Array.isArray(updatedTree) ? updatedTree : []
+      setFileTree(validTree)
+
+      // Close open tabs whose files were deleted
+      setOpenTabs((prev) => {
+        const remaining = prev.filter((tab) => findNodeInTree(validTree, tab._id || tab.id))
+        if (activeFile && !findNodeInTree(validTree, activeFile._id || activeFile.id)) {
+          setActiveFile(remaining.length > 0 ? remaining[remaining.length - 1] : null)
+        }
+        return remaining
+      })
+    } catch (err) {
+      console.error("Error deleting folder:", err)
+      toast.error(err.response?.data?.message || "Failed to delete folder")
+    }
+  }
+
+  // 11. Refresh File Tree
+  const handleRefreshTree = async () => {
+    setIsLoadingTree(true)
+    try {
+      const updatedTree = await getTree(projectId)
+      setFileTree(Array.isArray(updatedTree) ? updatedTree : [])
+      toast.info("Workspace file tree refreshed")
+    } catch (err) {
+      console.error("Failed to refresh file tree:", err)
+      toast.error("Failed to refresh workspace")
+    } finally {
+      setIsLoadingTree(false)
+    }
   }
 
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#07090e] text-slate-200 select-none font-sans">
+      <ToastContainer
+        position="top-right"
+        autoClose={2200}
+        hideProgressBar={false}
+        newestOnTop
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="dark"
+      />
+
       {/* 1. TOP NAVBAR / IDE HEADER */}
       <header className="h-11 bg-[#090c13] border-b border-white/[0.08] px-3 flex items-center justify-between shrink-0 z-20">
         {/* Left: Back & Project Title */}
@@ -121,11 +446,14 @@ const Project = () => {
 
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-slate-100 font-mono tracking-wide">
-              {projectId ? `Project #${projectId.slice(-6)}` : 'AI Workspace'}
+              {project?.name || (projectId ? `Project #${projectId.slice(-6)}` : 'AI Workspace')}
             </span>
             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.06] text-slate-200 border border-white/[0.1]">
               main
             </span>
+            {isLoadingProject && (
+              <VscSync className="text-xs text-slate-500 animate-spin" />
+            )}
           </div>
         </div>
 
@@ -262,8 +590,15 @@ const Project = () => {
             <FileExplorer
               fileTree={fileTree}
               activeFile={activeFile}
-              onSelectFile={handleSelectFile}
-              projectName="workspace"
+              onSelectFile={selectFileWithContent}
+              onCreateFile={handleCreateFile}
+              onCreateFolder={handleCreateFolder}
+              onDeleteFile={handleDeleteFile}
+              onDeleteFolder={handleDeleteFolder}
+              onRefreshTree={handleRefreshTree}
+              projectName={project?.name || 'workspace'}
+              rootFolderId={rootFolderId}
+              isLoading={isLoadingTree}
             />
           </div>
         )}
@@ -275,9 +610,11 @@ const Project = () => {
             <CodeEditor
               openTabs={openTabs}
               activeFile={activeFile}
-              onSelectTab={(tab) => setActiveFile(tab)}
+              onSelectTab={(tab) => selectFileWithContent(tab)}
               onCloseTab={handleCloseTab}
               onCodeChange={handleCodeChange}
+              saveStatus={saveStatus}
+              projectName={project?.name || 'workspace'}
             />
           </div>
 
